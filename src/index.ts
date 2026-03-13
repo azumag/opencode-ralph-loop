@@ -14,7 +14,7 @@ interface RalphState {
 
 // Constants
 const STATE_FILENAME = "ralph-loop.local.md";
-const OPENCODE_CONFIG_DIR = join(process.env.HOME || homedir(), ".config/opencode");
+const OPENCODE_CONFIG_DIR = join(homedir(), ".config/opencode");
 const COMPLETION_TAG = /<promise>\s*DONE\s*<\/promise>/is;
 
 // Get plugin root directory
