@@ -2,6 +2,17 @@
 
 Minimal Ralph Loop plugin for [opencode](https://opencode.ai) - auto-continues until task completion, then starts the same task again.
 
+## Fork notice
+
+This repository is a fork of [charfeng1/opencode-ralph-loop](https://github.com/charfeng1/opencode-ralph-loop).
+
+Compared with the upstream plugin, this fork changes the completion behavior:
+
+- Upstream stops the loop when the assistant outputs `<promise>DONE</promise>`.
+- This fork treats `<promise>DONE</promise>` as the end of one cycle, then starts the same task again.
+- The state file tracks `completedCycles` and resets `iteration` to `0` for each new cycle.
+- Bundled commands and skills are synced on plugin startup so installed opencode files stay aligned with this fork.
+
 Inspired by Anthropic's Ralph Wiggum technique for iterative, self-referential AI development loops.
 
 ## Why this plugin?
