@@ -8,6 +8,7 @@ interface RalphState {
   active: boolean;
   iteration: number;
   maxIterations: number;
+  completedCycles?: number;
   sessionId?: string;
   prompt?: string;
 }
@@ -29,7 +30,7 @@ function getPluginRoot(): string {
   }
 }
 
-// Auto-copy skills and commands to opencode config on first run
+// Sync skills and commands to opencode config.
 function setupSkillsAndCommands(): void {
   const pluginRoot = getPluginRoot();
   const skillsDir = join(OPENCODE_CONFIG_DIR, "skill");
@@ -43,7 +44,7 @@ function setupSkillsAndCommands(): void {
       const srcSkillDir = join(pluginSkillsDir, skill);
       const destSkillDir = join(skillsDir, skill);
 
-      if (existsSync(srcSkillDir) && !existsSync(destSkillDir)) {
+      if (existsSync(srcSkillDir)) {
         try {
           mkdirSync(destSkillDir, { recursive: true });
           cpSync(srcSkillDir, destSkillDir, { recursive: true });
@@ -62,7 +63,7 @@ function setupSkillsAndCommands(): void {
       const srcCmd = join(pluginCommandsDir, cmd);
       const destCmd = join(commandsDir, cmd);
 
-      if (existsSync(srcCmd) && !existsSync(destCmd)) {
+      if (existsSync(srcCmd)) {
         try {
           mkdirSync(commandsDir, { recursive: true });
           cpSync(srcCmd, destCmd);
@@ -93,6 +94,7 @@ function parseState(content: string): RalphState {
     if (key === "active") state.active = value === "true";
     if (key === "iteration") state.iteration = parseInt(value) || 0;
     if (key === "maxIterations") state.maxIterations = parseInt(value) || 100;
+    if (key === "completedCycles") state.completedCycles = parseInt(value) || 0;
     if (key === "sessionId") state.sessionId = value || undefined;
   }
 
@@ -111,6 +113,7 @@ function serializeState(state: RalphState): string {
     `iteration: ${state.iteration}`,
     `maxIterations: ${state.maxIterations}`,
   ];
+  if (state.completedCycles !== undefined) lines.push(`completedCycles: ${state.completedCycles}`);
   if (state.sessionId) lines.push(`sessionId: ${state.sessionId}`);
   lines.push("---");
   if (state.prompt) lines.push("", state.prompt);
@@ -187,20 +190,20 @@ export default async function RalphLoopPlugin(ctx: any) {
   const directory = ctx.directory || process.cwd();
   const client = ctx.client;
 
-  // Auto-setup skills and commands on first run
+  // Keep bundled skills and commands in sync with the plugin version.
   setupSkillsAndCommands();
 
   return {
     // Register tools (fallback if skills/commands not available)
     tool: {
       "ralph-loop": {
-        description: "Start Ralph Loop - auto-continues until task completion. Use: /ralph-loop <task description>",
+        description: "Start Ralph Loop - repeats the task after each completion. Use: /ralph-loop <task description>",
         parameters: {
           type: "object",
           properties: {
             task: {
               type: "string",
-              description: "The task to work on until completion"
+              description: "The task to repeat until cancelled"
             },
             maxIterations: {
               type: "number",
@@ -214,6 +217,7 @@ export default async function RalphLoopPlugin(ctx: any) {
             active: true,
             iteration: 0,
             maxIterations,
+            completedCycles: 0,
             prompt: task
           };
           writeState(directory, state);
@@ -222,7 +226,7 @@ export default async function RalphLoopPlugin(ctx: any) {
 
 Task: ${task}
 
-I will auto-continue until the task is complete. When fully done, I will output \`<promise>DONE</promise>\` to signal completion.
+I will auto-continue until the task is complete. When fully done, I will output \`<promise>DONE</promise>\` to signal completion, then Ralph Loop will start the same task again.
 
 Use /cancel-ralph to stop early.`;
         }
@@ -240,8 +244,9 @@ Use /cancel-ralph to stop early.`;
             return "No active Ralph Loop to cancel.";
           }
           const iterations = state.iteration;
+          const completedCycles = state.completedCycles ?? 0;
           clearState(directory);
-          return `Ralph Loop cancelled after ${iterations} iteration(s).`;
+          return `Ralph Loop cancelled after ${completedCycles} completed cycle(s) and ${iterations} iteration(s) in the current cycle.`;
         }
       },
 
@@ -264,7 +269,8 @@ Use /cancel-ralph to stop early.`;
 1. Start with: /ralph-loop "Build a REST API"
 2. AI works on the task until idle
 3. Plugin auto-continues if not complete
-4. Loop stops when AI outputs: <promise>DONE</promise>
+4. When AI outputs: <promise>DONE</promise>, the plugin starts the same task again
+5. Use /cancel-ralph to stop the loop
 
 ## State File
 
@@ -284,7 +290,39 @@ Located at: .opencode/ralph-loop.local.md`;
         if (state.sessionId && state.sessionId !== sessionId) return;
 
         if (await isComplete(client, sessionId, directory)) {
-          clearState(directory);
+          const completedCycles = (state.completedCycles ?? 0) + 1;
+          const nextState = {
+            ...state,
+            iteration: 0,
+            completedCycles,
+            sessionId
+          };
+          writeState(directory, nextState);
+
+          const restartPrompt = `[RALPH LOOP - CYCLE ${completedCycles + 1}]
+
+The previous cycle completed truthfully with <promise>DONE</promise>.
+
+Start the same task again from the beginning. Treat this as a fresh run of the original task while keeping any useful context from the project files.
+
+IMPORTANT:
+- Work the task again, not just summarize the completed cycle
+- When this new cycle is FULLY complete, output: <promise>DONE</promise>
+- Do not stop until the task is truly done
+
+Original task:
+${state.prompt || "(no task specified)"}`;
+
+          try {
+            await client.session.prompt({
+              path: { id: sessionId },
+              body: {
+                parts: [{ type: "text", text: restartPrompt }]
+              }
+            });
+          } catch {
+            // Silent fail - don't pollute TUI
+          }
           return;
         }
 

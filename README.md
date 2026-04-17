@@ -1,6 +1,6 @@
 # opencode-ralph-loop
 
-Minimal Ralph Loop plugin for [opencode](https://opencode.ai) - auto-continues until task completion.
+Minimal Ralph Loop plugin for [opencode](https://opencode.ai) - auto-continues until task completion, then starts the same task again.
 
 Inspired by Anthropic's Ralph Wiggum technique for iterative, self-referential AI development loops.
 
@@ -10,7 +10,7 @@ Inspired by Anthropic's Ralph Wiggum technique for iterative, self-referential A
 
 However, we personally found the full suite a bit heavy for our workflow. We also noticed others in the community expressing interest in specific features without needing the complete package. So we extracted just the Ralph Loop functionality into this standalone, lightweight plugin.
 
-If you want the full-featured experience, definitely check out oh-my-opencode. If you just want auto-continuation loops with minimal overhead, this plugin is for you.
+If you want the full-featured experience, definitely check out oh-my-opencode. If you just want repeating auto-continuation loops with minimal overhead, this plugin is for you.
 
 ## Installation
 
@@ -24,7 +24,7 @@ Add to your `~/.config/opencode/opencode.json`:
 
 Restart opencode. That's it!
 
-On first run, the plugin will automatically install skills and commands to your `~/.config/opencode/` directory.
+On each run, the plugin will automatically sync skills and commands to your `~/.config/opencode/` directory.
 
 ## Usage
 
@@ -34,7 +34,7 @@ On first run, the plugin will automatically install skills and commands to your 
 /ralph-loop "Build a REST API with authentication"
 ```
 
-The AI will work on your task and automatically continue until completion.
+The AI will work on your task, automatically continue until completion, then start the same task again.
 
 ### Cancel a loop
 
@@ -53,18 +53,18 @@ The AI will work on your task and automatically continue until completion.
 1. `/ralph-loop` creates a state file at `.opencode/ralph-loop.local.md`
 2. When the AI goes idle, the plugin checks if `<promise>DONE</promise>` was output
 3. If not found, it injects "Continue from where you left off"
-4. Loop continues until DONE is found or max iterations (100) reached
-5. State file is deleted when complete
+4. If found, it resets the iteration count and injects a prompt to start the same task again
+5. Loop continues until cancelled or max iterations (100) is reached during a cycle
 
 ### Completion Promise
 
-When the AI finishes a task, it outputs:
+When the AI finishes a task cycle, it outputs:
 
 ```
 <promise>DONE</promise>
 ```
 
-**Important:** The AI should ONLY output this when the task is COMPLETELY and VERIFIABLY finished. False promises are not allowed.
+**Important:** The AI should ONLY output this when the current cycle is COMPLETELY and VERIFIABLY finished. False promises are not allowed. DONE starts the next cycle; it does not stop the loop.
 
 ## State File
 
@@ -81,6 +81,7 @@ Format (markdown with YAML frontmatter):
 active: true
 iteration: 3
 maxIterations: 100
+completedCycles: 2
 sessionId: ses_abc123
 ---
 
@@ -92,10 +93,10 @@ Add `.opencode/ralph-loop.local.md` to your `.gitignore`.
 ## Features
 
 - **Plug-and-play**: Just add to config and restart - no manual setup
-- **Auto-setup**: Skills and commands are automatically installed on first run
+- **Auto-setup**: Skills and commands are automatically synced
 - **Minimal**: ~300 lines, no bloat
 - **Project-relative**: State file in `.opencode/`, not global
-- **Completion detection**: Scans session messages for DONE promise
+- **Completion detection**: Scans session messages for DONE promise and restarts the task
 - **Progressive context**: Skills provide context only when needed
 - **Commands**: `/ralph-loop`, `/cancel-ralph`, and `/help`
 

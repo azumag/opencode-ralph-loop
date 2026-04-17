@@ -5,7 +5,7 @@ description: Cancel active Ralph Loop
 
 # Cancel Ralph
 
-Stop an active Ralph Loop before completion.
+Stop an active Ralph Loop.
 
 ## How to Use
 
@@ -17,9 +17,10 @@ When you invoke this skill:
 test -f .opencode/ralph-loop.local.md && echo "Loop is active" || echo "No active loop"
 ```
 
-2. If active, read the current iteration count:
+2. If active, read the current cycle/iteration counts:
 
 ```bash
+grep '^completedCycles:' .opencode/ralph-loop.local.md || true
 grep '^iteration:' .opencode/ralph-loop.local.md
 ```
 
@@ -29,7 +30,7 @@ grep '^iteration:' .opencode/ralph-loop.local.md
 rm -f .opencode/ralph-loop.local.md
 ```
 
-4. Inform the user of the cancellation and which iteration was reached.
+4. Inform the user of the cancellation, including completed cycles and the current iteration when available.
 
 ## When to Use
 

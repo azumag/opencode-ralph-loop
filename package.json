@@ -1,7 +1,7 @@
 {
   "name": "opencode-ralph-loop",
-  "version": "1.0.7",
-  "description": "Minimal Ralph Loop plugin for opencode - auto-continues until task completion",
+  "version": "1.0.8",
+  "description": "Minimal Ralph Loop plugin for opencode - repeats tasks after completion until cancelled",
   "main": "src/index.ts",
   "type": "module",
   "keywords": [

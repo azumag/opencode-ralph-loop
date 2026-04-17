@@ -10,17 +10,17 @@ The Ralph Loop plugin provides auto-continuation for complex tasks in opencode.
 ## Available Commands
 
 ### `/ralph-loop <task>`
-Start an iterative development loop that automatically continues until the task is complete.
+Start an iterative development loop that automatically continues until the task is complete, then starts the same task again.
 
 Example:
 ```
 /ralph-loop Build a REST API with authentication
 ```
 
-The AI will work on your task and automatically continue until completion.
+The AI will work on your task and automatically continue. When a cycle completes, it starts the same task again.
 
 ### `/cancel-ralph`
-Cancel an active Ralph Loop before it completes.
+Cancel an active Ralph Loop.
 
 Example:
 ```
@@ -32,18 +32,18 @@ Example:
 1. **Start**: `/ralph-loop` creates a state file at `.opencode/ralph-loop.local.md`
 2. **Loop**: When the AI goes idle, the plugin checks if `<promise>DONE</promise>` was output
 3. **Continue**: If not found, it injects "Continue from where you left off"
-4. **Stop**: Loop continues until DONE is found or max iterations (100) reached
-5. **Cleanup**: State file is deleted when complete
+4. **Repeat**: If DONE is found, it starts the same task again
+5. **Stop**: Loop continues until cancelled or max iterations (100) is reached during a cycle
 
 ## Completion Signal
 
-When the task is fully complete, the AI outputs:
+When the current task cycle is fully complete, the AI outputs:
 
 ```
 <promise>DONE</promise>
 ```
 
-This signals the loop to stop. The AI should ONLY output this when the task is truly complete.
+This signals the loop to start the same task again. The AI should ONLY output this when the current cycle is truly complete.
 
 ## State File
 
@@ -54,6 +54,7 @@ Located at `.opencode/ralph-loop.local.md` (add to `.gitignore`):
 active: true
 iteration: 3
 maxIterations: 100
+completedCycles: 2
 sessionId: ses_abc123
 ---
 

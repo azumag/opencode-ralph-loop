@@ -8,10 +8,11 @@ Cancel the active Ralph Loop.
 
 ## Steps
 
-1. Check if a loop is active and get the iteration count:
+1. Check if a loop is active and get the cycle/iteration counts:
 
 ```bash
 if [ -f .opencode/ralph-loop.local.md ]; then
+  grep '^completedCycles:' .opencode/ralph-loop.local.md || true
   grep '^iteration:' .opencode/ralph-loop.local.md
   rm -f .opencode/ralph-loop.local.md
   echo "Ralph Loop cancelled."
