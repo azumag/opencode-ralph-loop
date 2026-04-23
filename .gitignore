@@ -3,6 +3,6 @@ dist/
 *.log
 .DS_Store
 
-# Don't commit local state files
-ralph-loop.local.md
-.opencode/
+# Ralph Loop state files (now per-session UUID files)
+.opencode/ralph-loop-*.md
+

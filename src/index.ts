@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, cpSync 
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { randomUUID } from "crypto";
 
 // Types
 interface RalphState {
@@ -14,7 +15,7 @@ interface RalphState {
 }
 
 // Constants
-const STATE_FILENAME = "ralph-loop.local.md";
+const STATE_FILENAME_PREFIX = "ralph-loop";
 const OPENCODE_CONFIG_DIR = join(homedir(), ".config/opencode");
 const COMPLETION_TAG = /<promise>\s*DONE\s*<\/promise>/is;
 
@@ -76,8 +77,8 @@ function setupSkillsAndCommands(): void {
 }
 
 // Get state file path (project-relative)
-function getStateFile(directory: string): string {
-  return join(directory, ".opencode", STATE_FILENAME);
+function getStateFile(directory: string, loopId: string): string {
+  return join(directory, ".opencode", `${STATE_FILENAME_PREFIX}-${loopId}.md`);
 }
 
 // Parse markdown frontmatter state
@@ -121,9 +122,9 @@ function serializeState(state: RalphState): string {
 }
 
 // Read state from project directory
-function readState(directory: string): RalphState {
+function readState(directory: string, loopId: string): RalphState {
   try {
-    const stateFile = getStateFile(directory);
+    const stateFile = getStateFile(directory, loopId);
     if (existsSync(stateFile)) {
       return parseState(readFileSync(stateFile, "utf-8"));
     }
@@ -132,18 +133,18 @@ function readState(directory: string): RalphState {
 }
 
 // Write state to project directory
-function writeState(directory: string, state: RalphState): void {
+function writeState(directory: string, state: RalphState, loopId: string): void {
   try {
-    const stateFile = getStateFile(directory);
+    const stateFile = getStateFile(directory, loopId);
     mkdirSync(dirname(stateFile), { recursive: true });
     writeFileSync(stateFile, serializeState(state));
   } catch {}
 }
 
 // Clear state
-function clearState(directory: string): void {
+function clearState(directory: string, loopId: string): void {
   try {
-    const stateFile = getStateFile(directory);
+    const stateFile = getStateFile(directory, loopId);
     if (existsSync(stateFile)) unlinkSync(stateFile);
   } catch {}
 }
@@ -185,6 +186,27 @@ async function isComplete(client: any, sessionId: string, directory: string): Pr
   return false;
 }
 
+// Find state file for a given sessionId by scanning
+function findStateFileForSession(directory: string, sessionId: string): string | null {
+  const opencodeDir = join(directory, ".opencode");
+  if (!existsSync(opencodeDir)) return null;
+
+  try {
+    const files = require("fs").readdirSync(opencodeDir);
+    for (const file of files) {
+      if (!file.startsWith(STATE_FILENAME_PREFIX) || !file.endsWith(".md")) continue;
+      const stateFile = join(opencodeDir, file);
+      const content = readFileSync(stateFile, "utf-8");
+      const state = parseState(content);
+      if (state.active && state.sessionId === sessionId) {
+        // Return the loopId (from filename, extracted between prefix and .md)
+        return file.slice(STATE_FILENAME_PREFIX.length + 1, -3);
+      }
+    }
+  } catch {}
+  return null;
+}
+
 // Main plugin
 export default async function RalphLoopPlugin(ctx: any) {
   const directory = ctx.directory || process.cwd();
@@ -213,14 +235,16 @@ export default async function RalphLoopPlugin(ctx: any) {
           required: ["task"]
         },
         async execute({ task, maxIterations = 100 }: { task: string; maxIterations?: number }) {
+          const loopId = randomUUID();
           const state: RalphState = {
             active: true,
             iteration: 0,
             maxIterations,
             completedCycles: 0,
+            sessionId: ctx.sessionId,
             prompt: task
           };
-          writeState(directory, state);
+          writeState(directory, state, loopId);
 
           return `Ralph Loop started (max ${maxIterations} iterations).
 
@@ -239,13 +263,15 @@ Use /cancel-ralph to stop early.`;
           properties: {}
         },
         async execute() {
-          const state = readState(directory);
-          if (!state.active) {
+          const sessionId = ctx.sessionId || "";
+          const loopId = findStateFileForSession(directory, sessionId);
+          if (!loopId) {
             return "No active Ralph Loop to cancel.";
           }
+          const state = readState(directory, loopId);
           const iterations = state.iteration;
           const completedCycles = state.completedCycles ?? 0;
-          clearState(directory);
+          clearState(directory, loopId);
           return `Ralph Loop cancelled after ${completedCycles} completed cycle(s) and ${iterations} iteration(s) in the current cycle.`;
         }
       },
@@ -274,7 +300,7 @@ Use /cancel-ralph to stop early.`;
 
 ## State File
 
-Located at: .opencode/ralph-loop.local.md`;
+Each loop gets its own state file at: .opencode/ralph-loop-<unique-id>.md`;
         }
       }
     },
@@ -283,21 +309,22 @@ Located at: .opencode/ralph-loop.local.md`;
     event: async ({ event }: { event: { type: string; properties?: { sessionID?: string } } }) => {
       if (event.type === "session.idle") {
         const sessionId = event.properties?.sessionID;
-        const state = readState(directory);
-
-        if (!state.active) return;
         if (!sessionId) return;
-        if (state.sessionId && state.sessionId !== sessionId) return;
+
+        const loopId = findStateFileForSession(directory, sessionId);
+        if (!loopId) return;
+
+        const state = readState(directory, loopId);
+        if (!state.active) return;
 
         if (await isComplete(client, sessionId, directory)) {
           const completedCycles = (state.completedCycles ?? 0) + 1;
           const nextState = {
             ...state,
             iteration: 0,
-            completedCycles,
-            sessionId
+            completedCycles
           };
-          writeState(directory, nextState);
+          writeState(directory, nextState, loopId);
 
           const restartPrompt = `[RALPH LOOP - CYCLE ${completedCycles + 1}]
 
@@ -327,12 +354,12 @@ ${state.prompt || "(no task specified)"}`;
         }
 
         if (state.iteration >= state.maxIterations) {
-          clearState(directory);
+          clearState(directory, loopId);
           return;
         }
 
-        const newState = { ...state, iteration: state.iteration + 1, sessionId };
-        writeState(directory, newState);
+        const newState = { ...state, iteration: state.iteration + 1 };
+        writeState(directory, newState, loopId);
 
         // Inject continuation prompt with original task (like Anthropic's ralph-wiggum)
         const continuationPrompt = `[RALPH LOOP - ITERATION ${newState.iteration}/${newState.maxIterations}]
@@ -361,7 +388,11 @@ ${state.prompt || "(no task specified)"}`;
       }
 
       if (event.type === "session.deleted") {
-        clearState(directory);
+        const sessionId = event.properties?.sessionID;
+        if (sessionId) {
+          const loopId = findStateFileForSession(directory, sessionId);
+          if (loopId) clearState(directory, loopId);
+        }
       }
     }
   };
